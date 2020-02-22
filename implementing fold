@@ -1,0 +1,300 @@
+
+import csv
+from keras.models import Sequential
+import random
+from keras.layers import Dense
+from keras.optimizers import SGD
+import numpy as np
+from sklearn.svm import SVR
+from sklearn.model_selection import cross_val_score
+from sklearn import svm
+from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+possible_letters = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y','-']
+
+#dictionary to convert letter to binary string
+binary = {
+'A' : [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'C' : [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'D' : [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'E' : [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'F' : [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'G' : [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'H' : [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'I' : [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'K' : [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+'L' : [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+'M' : [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+'N' : [0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+'P' : [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+'Q' : [0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+'R' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+'S' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+'T' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+'V' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+'W' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
+'Y' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],
+'-' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    }
+
+#prints info about the string depending on which file
+def print_file_info(file, row_count, file_max, file_min, file_avg):
+    if (file == 'decoded_PF00075_meso (1).csv'):
+        print(row_count, 'number of sequences in meso')
+        print(file_max, 'max length in meso')
+        print(file_min, 'min length in meso')
+        print(file_avg, 'average length in meso')
+        print('')
+    elif (file == 'decoded_PF00075_psych.csv'):
+        print(row_count, 'number of sequences in psycho')
+        print(file_max, 'max length in psycho')
+        print(file_min, 'min length in psycho')
+        print(file_avg, 'average length in psycho')
+        print('')
+    elif (file == 'decoded_PF00075_thermo.csv'):
+        print(row_count, 'number of sequences in thermo')
+        print(file_max, ' max length in thermo')
+        print(file_min, 'min length in thermo')
+        print(file_avg, 'average length in thermo')
+        print('')
+        
+#converts string into the binary form
+#iterates through each char in prot_seq and each char in possible_letters
+#when it finds the matching character, it converts it to the binary form and adds it
+#to bin_string, which is the new binary sequence returned
+def string_to_binary(prot_seq):
+    bin_string = []
+    for i in range(len(prot_seq)):
+        for j in range(len(possible_letters)):
+              if prot_seq[i] == possible_letters[j]:
+                  bin_string += binary[possible_letters[j]]
+    return bin_string
+
+#splits word by each character                  
+def split(word):
+    return [char for char in word]
+
+#finds the average of a given list
+def avg(list):
+    sum = 0
+    for num in list:
+        sum+=num
+    return sum/len(list)
+
+#iterates through each file
+#copies the length of each sequence into lengths
+#finds the max of lengths
+def get_max(files, lengths):
+    for file in files:   
+        with open(file) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            for row in csv_reader:
+                prot_seq = row[1]
+                lengths.append(len(prot_seq))
+    max_len = max(lengths)
+    return max_len
+
+def round_avg(list):
+    sum = 0
+    for i in list:
+        sum += i
+    return round((sum / len(list)),5)
+
+def main():
+    files = ['decoded_PF00075_meso (1).csv', 'decoded_PF00075_psych.csv', 'decoded_PF00075_thermo.csv'] 
+    x = []
+    y = []
+    lengths = []
+    max_len = get_max(files, lengths)
+    prot_bag = []
+    prot_bag_len = 0
+    num_samples = 1000
+    num_meso = 0
+    num_thermo = 0
+    num_psychro = 0
+    #prepares x and y
+    #iterates through each file
+    #turns each protein sequence into its binary form and copies it into x
+    #prepares y by putting each type into a list with 0, -1, and 1
+    for file2 in files: 
+        with open(file2) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            prot_bag_len=0
+            for row in csv_reader:
+                prot_bag.append(row[1])
+                prot_bag_len += 1
+            for i in range(num_samples):
+                prot_seq_len = 0
+                while prot_seq_len == 0:
+                    randnum = random.randint(0,prot_bag_len-1)
+                    print(randnum)
+                    prot_seq = prot_bag[randnum]
+                    prot_seq_len = len(prot_seq)
+                
+                #makes sure empty strings are not put into the data
+                if len(prot_seq) == 0:
+                    continue
+                #file_seq is an individual list for the file
+                file_seq = []
+                #appends the protein sequence with '-' so the lengths are even
+                while (len(prot_seq) < max_len):
+                    prot_seq+='-'
+                file_seq.append(prot_seq) 
+                
+                #appends a 0, -1, or 1 depending on which file is being iterated through
+                for i in range(len(file_seq)):
+                    file_seq[i] = split(file_seq[i])
+                    file_seq[i] = string_to_binary(file_seq[i]) 
+                    x.append(file_seq[i])
+                    if (file2 == 'decoded_PF00075_meso (1).csv'):
+                        y.append([0,1,0])
+                        num_meso += 1
+                    elif (file2 == 'decoded_PF00075_psych.csv'):
+                        y.append([1,0,0])
+                        num_psychro += 1
+                    elif (file2 == 'decoded_PF00075_thermo.csv'):
+                        y.append([0,0,1])
+                        num_thermo += 1
+                    else:
+                        print('file not found???')
+                        
+    #gets the testing and training data separated
+    #prints shape of x and y
+    x = np.array(x)
+    y = np.array(y)
+
+
+    print('prints x[0]:', x[0])
+    print('shape of y: ' + str(len(y)))
+    print('shape of x: ' + str(len(x)) + ', ' + str(len(x[0])))
+    print('')
+    #prints information about the files
+    #prints information about number of sequences, max length, min length, and average length for each file        
+    for file3 in files:
+        with open(file3) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            row_count = 0
+            file_lengths = []
+            for row in csv_reader:
+                if (len(row[1])) == 0:
+                    continue
+                row_count+=1
+                file_lengths.append(len(row[1]))
+            file_max = max(file_lengths)     
+            file_min = min(file_lengths)
+            file_avg = avg(file_lengths)
+            
+            print_file_info(file3, row_count, file_max, file_min, file_avg)
+            
+    #x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=.75, random_state=0)
+    #sc = StandardScaler()
+    #x_train = sc.fit_transform(x_train)
+    #x_test = sc.transform(x_test)
+    
+    x_train = []
+    y_train = []
+    x_test = []
+    y_test = []
+    print('x[0:3]', x[0:3])
+    num_splits = 5
+    split_factor = int(len(x) / num_splits)
+    print('num_meso:', str(num_meso))
+    print('num_thermo:', str(num_thermo))
+    print('num_psychro:', str(num_psychro))
+    print('len(x):', len(x))
+    print('type of split_factor:', type(split_factor))
+    
+    x_folds = []
+    y_folds = []
+    #x_folds.append([])
+   # y_folds.append([])
+    print(x[1])
+    for i in range(num_splits):
+        x_folds.append([])
+        y_folds.append([])
+        for string in x[split_factor * i : split_factor * (i+1)]:
+            x_folds[i].append(string)
+        for string in y[split_factor * i : split_factor * (i+1)]:
+            y_folds[i].append(string)
+        
+       # for j in range(599):
+            #x_folds[i].append(x[split_factor * i])
+            #y_folds[i].append(y[split_factor * i])
+        #x_folds[i] = x[split_factor * i:split_factor * (i+1)]
+        #print('x being added', x[split_factor * i:split_factor * (i+1)])
+        #y_folds[i] = y[split_factor * i:split_factor * (i+1)]
+        
+    '''
+    for i in range(len(x_folds)):
+        counter = 0
+        for j in range(len(x_folds[i])):
+            for amino in x_folds[i][j]:
+                x_folds[i][j] += amino
+            counter +=1
+            print(counter)
+            print(x_folds[i][j])
+        print('end one fold')
+    print('len(x_folds[i]):', len(x_folds[i]))
+    print('len(x_folds):', len(x_folds))
+    print('type(x_folds[1]', type(x_folds[1]))
+    '''
+    
+    #x_train = [x[0:split_factor],x[split_factor : split_factor * 2,]
+    k=0
+    num_tests = 1
+    neurons = [10, 50, 100, 500, 1000]
+    neuron_accuracy = []
+    for i in neurons:
+        neuron_accuracy.append([])
+        for j in range(num_splits): #exchange num_splits for num_tests if it breaks
+            #kfold part
+            x_test = x_folds[j]
+            y_test = y_folds[j]
+            for k in range(len(x_folds)) :
+                if k != j:
+                    for l in range(len(x_folds[k])):
+                        x_train.append(x_folds[k])
+                        y_train.append(y_folds[k])
+                if k == j:
+                    x_test = x_folds[k]
+                    y_test = y_folds[k]
+            model = Sequential()
+            model.add(Dense(i, activation='relu', input_dim=len(x_train[0]))) #input_dim is 15477, relu is hidden layer
+            model.add(Dense(3, activation='sigmoid'))#softmax is sigmoid
+            sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)    
+            model.compile(loss='mean_squared_error',
+                      optimizer=sgd,
+                      metrics=['categorical_accuracy']) 
+            model.fit(x_train, y_train, epochs=10)
+            loss_and_metrics = model.evaluate(x_test, y_test)
+            neuron_accuracy[k].append(round(loss_and_metrics[1],4))
+            print('test loss and metrics', loss_and_metrics)
+            y_pred = model.predict(x_test)
+        k += 1
+    print(neuron_accuracy)
+    print('len(neurons):', len(neurons))
+    print('len(neuron_accuracy):', len(neuron_accuracy))
+    #print('neurons: \t accuracy:')
+    
+    #build table
+    print('neurons:\t', end = '')
+    for i in range(num_splits):
+        print(str(i+1) + ':\t', end = '')
+    print('average:')
+    for i in range(len(neurons)):
+        print(str(neurons[i]) + ':\t', end = ' ')
+        for j in range(num_splits):
+            print('\t' + str(neuron_accuracy[i][j]), end = ' ')
+        print('\t' + str(round_avg(neuron_accuracy[i])), end = ' ')
+        print('')
+    
+    f= open("aminoresults.txt","w+")
+    f.write('Expected:\tPredicted:\n')
+    for i in range(len(y_pred)):
+        f.write(str(y_test[i]) + '\t\t' + str(y_pred[i]) + '\n')
+    print('len(y_pred):', len(y_pred))
+  
+if __name__ == '__main__':
+    main()
