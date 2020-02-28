@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Feb 27 14:59:27 2020
+
+@author: lizaszymborski
+"""
+
+import csv
+from keras.models import Sequential
+import random
+from keras.layers import Dense
+from keras.optimizers import SGD
+import numpy as np
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+
+possible_letters = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y','-']
+
+#dictionary to convert letter to binary string
+binary = {
+'A' : [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'C' : [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'D' : [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'E' : [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'F' : [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'G' : [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'H' : [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'I' : [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'K' : [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+'L' : [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+'M' : [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+'N' : [0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+'P' : [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+'Q' : [0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+'R' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+'S' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+'T' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+'V' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+'W' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
+'Y' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],
+'-' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    }
+
+#prints info about the string depending on which file
+def print_file_info(file, row_count, file_max, file_min, file_avg):
+    if (file == 'decoded_PF00075_meso (1).csv'):
+        print(row_count, 'number of sequences in meso')
+        print(file_max, 'max length in meso')
+        print(file_min, 'min length in meso')
+        print(file_avg, 'average length in meso')
+        print('')
+    elif (file == 'decoded_PF00075_psych.csv'):
+        print(row_count, 'number of sequences in psycho')
+        print(file_max, 'max length in psycho')
+        print(file_min, 'min length in psycho')
+        print(file_avg, 'average length in psycho')
+        print('')
+    elif (file == 'decoded_PF00075_thermo.csv'):
+        print(row_count, 'number of sequences in thermo')
+        print(file_max, ' max length in thermo')
+        print(file_min, 'min length in thermo')
+        print(file_avg, 'average length in thermo')
+        print('')
+        
+#converts string into the binary form
+#iterates through each char in prot_seq and each char in possible_letters
+#when it finds the matching character, it converts it to the binary form and adds it
+#to bin_string, which is the new binary sequence returned
+def string_to_binary(prot_seq):
+    bin_string = []
+    for i in range(len(prot_seq)):
+        for j in range(len(possible_letters)):
+              if prot_seq[i] == possible_letters[j]:
+                  bin_string += binary[possible_letters[j]]
+    return bin_string
+
+#splits word by each character                  
+def split(word):
+    return [char for char in word]
+
+#finds the average of a given list
+def avg(list):
+    sum = 0
+    for num in list:
+        sum+=num
+    return sum/len(list)
+
+#iterates through each file
+#copies the length of each sequence into lengths
+#finds the max of lengths
+def get_max(files, lengths):
+    for file in files:   
+        with open(file) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            for row in csv_reader:
+                prot_seq = row[1]
+                lengths.append(len(prot_seq))
+    max_len = max(lengths)
+    return max_len
+
+#finds the average of a given list
+#returns the rounded average
+def round_avg(list):
+    sum = 0
+    for i in list:
+        sum += i
+    return round((sum / len(list)),5)
+
+def main():
+    files = ['decoded_PF00075_meso (1).csv', 'decoded_PF00075_psych.csv', 'decoded_PF00075_thermo.csv'] 
+    x = [] #stores protein sequences
+    y = [] #stores thermostability
+    lengths = [] #stores length of protein sequences
+    max_len = get_max(files, lengths) #the max length of protein sequence in all the files
+    prot_bag = [] #a 'bag' to draw from to put into prot_seq
+    prot_bag_len = 0 #length of sequences to draw from in prot_bag
+    num_samples = 2500 #number of protein sequences to have from each class
+    
+    #prepares x and y
+    #iterates through each file
+    #turns each protein sequence into its binary form and copies it into x
+    #prepares y by putting each type into a list with 0, -1, and 1
+    for file2 in files: 
+        with open(file2) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            prot_bag_len=0
+            
+            #puts every protein sequence from the file into prot_bag
+            for row in csv_reader:
+                prot_bag.append(row[1])
+                #initializes prot_bag_len to the number of sequences in the file
+                if (file2 == 'decoded_PF00075_meso (1).csv'): #mesophilic
+                    prot_bag_len = 2756
+                elif (file2 == 'decoded_PF00075_psych.csv'): #psychrophilic
+                    prot_bag_len = 95
+                elif (file2 == 'decoded_PF00075_thermo.csv'): #thermophilic
+                    prot_bag_len = 131
+                    
+            #draws from the protein bag to make an even number of each class to x
+            #preprocesses it to be machine readable
+            #adds the numeric version to x
+            for i in range(num_samples):
+                randnum = random.randint(0,prot_bag_len)
+                prot_seq = prot_bag[randnum]       
+                #makes sure empty strings are put into the data
+                if len(prot_seq) == 0:
+                    continue
+                #file_seq is an individual list for the file
+                file_seq = []
+                #appends the protein sequence with '-' so the lengths are even
+                while (len(prot_seq) < max_len):
+                    prot_seq+='-'
+                file_seq.append(prot_seq)               
+                #appends a [0,1,0], [1,0,0], or [0,0,1] depending on which file is being iterated through
+                for i in range(len(file_seq)):
+                    file_seq[i] = split(file_seq[i])
+                    file_seq[i] = string_to_binary(file_seq[i]) 
+                    x.append(file_seq[i])
+                    if (file2 == 'decoded_PF00075_meso (1).csv'):
+                        y.append([0,1,0])
+                    elif (file2 == 'decoded_PF00075_psych.csv'):
+                        y.append([1,0,0])
+                    elif (file2 == 'decoded_PF00075_thermo.csv'):
+                        y.append([0,0,1])
+                    else:
+                        print('file not found???')
+                        
+    #converts x and y matrices into np arrays
+    x = np.array(x)
+    y = np.array(y)
+
+    #prints information about the files
+    #prints information about number of sequences, max length, min length, and average length for each file        
+    for file3 in files: #iterates through each file
+        with open(file3) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            row_count = 0 #counts which row csv_reader is on
+            file_lengths = [] #list of the lengths of sequences in the file
+            
+            #counts the number of sequences in the file
+            for row in csv_reader:
+                if (len(row[1])) == 0: #exclude protein sequence with length 0
+                    continue
+                row_count+=1
+                file_lengths.append(len(row[1]))
+            file_max = max(file_lengths) #maximum length in the individual file
+            file_min = min(file_lengths) #minimum length in the individual file
+            file_avg = avg(file_lengths) #average length in the individual file
+            #prints info for files
+            print_file_info(file3, row_count, file_max, file_min, file_avg)
+            
+    #initializes variables used in the model
+    num_splits = 3 #number of splits in the dataset for the kfold
+    kf = KFold(n_splits=num_splits, shuffle = True, random_state = 100) #sets up kfold
+    k = 0 #initializes k variable, keeps track of iterations in nested for loop
+    neurons = [10, 50, 100, 500] #neurons to be tested
+    neuron_accuracy = [] #2d array which keeps track of the accuracy metric for each kfold and neuron tested
+    
+    #nested for loop
+    #iterates through each neuron amount to test  
+    for i in neurons:
+        neuron_accuracy.append([]) #adds a new list
+        #tests each kfold training/testing
+        for train_index, test_index in kf.split(x):
+            #seperates training and testing
+            x_train, x_test = x[train_index], x[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+            
+            #converts x and y to standard scaler
+            sc = StandardScaler()
+            x_train = sc.fit_transform(x_train)
+            x_test = sc.transform(x_test)
+            
+            #deep learning sequential model
+            model = Sequential() #initialize a sequential model
+            
+            #add layers to model
+            model.add(Dense(i, activation='relu', input_dim=len(x_train[0]))) #uses i neurons, relu activation function, and len(x_train[0]) input neurons
+            model.add(Dense(3, activation='sigmoid'))#output layer has 3 classes
+            
+            #set metrics for model
+            sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True) #square gradient descent
+            model.compile(loss='mean_squared_error', #loss function
+                      optimizer=sgd, #how it is optimized
+                      metrics=['categorical_accuracy']) #metric used to evaluate accuracy
+            
+            #train the model
+            model.fit(x_train, y_train, epochs=10) #10 iterations
+            
+            #evaluate the model
+            loss_and_metrics = model.evaluate(x_test, y_test) #evaluates loss and accuracy
+            y_pred = model.predict(x_test) #the models predicted values from x_test
+            print('test loss and metrics', loss_and_metrics)
+            
+            #appends the accuracy rounded to 4 digits for that kfold and neuron value to neuron_accuracy
+            neuron_accuracy[k].append(round(loss_and_metrics[1],4))
+            
+        #counts which kfold the model is on
+        k += 1
+        
+    print(neuron_accuracy)
+    print('len(neurons):', len(neurons))
+    print('len(neuron_accuracy):', len(neuron_accuracy))
+    
+    #prints table
+    #lists the accuracy for each kfold and each number of neurons tested
+    
+    #prints table headers
+    print('kfold:\t\t') #table header for each kfold
+    print('neurons:\t', end = '') #table header for number of neurons tested
+    for i in range(num_splits): #table headers for each split of the kfold
+        print(str(i+1) + ':\t', end = '')
+    print('average:') #table header for average
+    
+    #prints accuracy for each kfold and number of neurons tested
+    for i in range(len(neurons)):
+        print(str(neurons[i]) + ':\t', end = ' ')
+        for j in range(num_splits):
+            print('\t' + str(neuron_accuracy[i][j]), end = ' ')
+        print('\t' + str(round_avg(neuron_accuracy[i])), end = ' ')
+        print('')
+    
+    #copies to file aminoresults.txt
+    f= open("aminoresults.txt","w+")
+    f.write('Expected:\tPredicted:\n')
+    for i in range(len(y_pred)):
+        f.write(str(y_test[i]) + '\t\t' + str(y_pred[i]) + '\n')
+    print('len(y_pred):', len(y_pred))
+  
+if __name__ == '__main__':
+    main()
