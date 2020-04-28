@@ -1,0 +1,226 @@
+import numpy as np
+from keras.utils import to_categorical
+from keras.models import Sequential
+from keras.layers import Conv2D, Flatten, Dense
+from keras.initializers import RandomNormal, RandomUniform, TruncatedNormal, VarianceScaling, Orthogonal, lecun_uniform, glorot_normal, glorot_uniform, lecun_normal
+from datetime import datetime
+import csv
+from keras.optimizers import SGD
+from sklearn.model_selection import KFold, train_test_split
+from sklearn.preprocessing import StandardScaler
+from statistics import mean, stdev
+
+## Global variables
+np.random.seed(0)
+no_of_classes = 3
+no_of_seq = 7500          # Number of protein sequences in dataset
+no_of_pos = 737             # Number of positions in protein sequence
+bits_per_pos = 21           # Represent each position by 21-bit vector
+seq_len = no_of_pos * bits_per_pos
+
+possible_letters = ['A','C','D','E','F','G','H','I','K','L','M','N','P','Q','R','S','T','V','W','Y','-']
+
+#dictionary to convert letter to binary string
+binary = {
+'A' : [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'C' : [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'D' : [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'E' : [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'F' : [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'G' : [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'H' : [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'I' : [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+'K' : [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+'L' : [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+'M' : [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+'N' : [0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+'P' : [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+'Q' : [0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+'R' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+'S' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+'T' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+'V' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+'W' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
+'Y' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],
+'-' : [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]
+    }
+
+def print_file_info(file_name, row_count, file_max, file_min, file_avg):
+        print('number of sequences in ' + file_name + ': ', row_count)
+        print('max length in ' + file_name + ':', file_max)
+        print('min length in ' + file_name + ': ', file_min)
+        print('average length in ' + file_name + ':', file_avg, )
+        print('')
+        
+def string_to_binary(prot_seq): #a protein sequence composed of amino acids is passed in
+    bin_string = [] #variable storing binary version of amino acid string
+    for i in range(len(prot_seq)): #iterates through each char in prot_seq
+        for j in range(len(possible_letters)): #iterates through each possible amino acid possible
+              if prot_seq[i] == possible_letters[j]: #finds the matching amino acid
+                  bin_string += binary[possible_letters[j]] #appends the correct binary interpretation
+    return bin_string #returns the binary string of that protein sequence
+
+def get_max_of_files(files, lengths): #parameter of all files and an empty list
+    for file in files: #iterates through each file
+        with open(file) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            for row in csv_reader: #iterates through each row on the csv reader
+                prot_seq = row[1] #selects the protein sequence, not the name
+                lengths.append(len(prot_seq)) #appends the length of that protein sequence to lengths
+    return max(lengths) #returns the max
+
+def file_len_no_empty(file):
+    prot_bag_len = 0
+    with open(file) as csv_file:
+        csv_reader = csv.reader(csv_file)
+        for row in csv_reader:
+            if (len(row[1]) != 0):
+                prot_bag_len += 1
+    return prot_bag_len
+
+def print_table(usage, num_splits, neurons, neuron_accuracy):
+    print(usage)
+    print('\t\tkfold:') #table header for each kfold
+    print('filters:\t', end = '') #table header for number of neurons tested
+    for i in range(num_splits): #table headers for each split of the kfold
+        print(str(i+1) + ':\t', end = '')
+    print('average:', end = ' ') #table header for average
+    print('standard deviation:') #table header for standard deviation
+       
+    for i in range(len(neurons)): #prints accuracy for each kfold and number of neurons tested
+        print(str(neurons[i]) + ':\t', end = ' ') #prints the neuron amount
+        for j in range(num_splits): #iterates through each kfold
+            print('\t' + str(neuron_accuracy[i][j]), end = ' ') #prints accuracy for kfold and neuron amount
+        print('\t' + str(round(mean(neuron_accuracy[i]), 4)), end = ' ') #print average
+        print('\t' + str(round(stdev(neuron_accuracy[i]), 4)), end = ' ')
+        print('')
+    #for i in range(len(fold_accuracy)): 
+       # print('\t' + str(round(mean(fold_accuracy[i]), 4)), end = ' ')
+
+def main():
+    start = datetime.now()
+    files = ['decoded_PF00075_meso (1).csv', 'decoded_PF00075_psych.csv', 'decoded_PF00075_thermo.csv'] 
+    x = [] #stores protein sequences
+    y = [] #stores thermostability
+    lengths = [] #stores length of protein sequences
+    max_len = get_max_of_files(files, lengths) #the max length of protein sequence in all the files
+    prot_bag = [] #a 'bag' to draw from to put into prot_seq
+    prot_bag_len = 0 #length of sequences to draw from in prot_bag
+    num_samples = 2500 #number of protein sequences to have from each class
+
+    for file2 in files: #iterates through each file
+        with open(file2) as csv_file:
+            csv_reader = csv.reader(csv_file)
+            prot_bag_len=0 #0 protein sequences have been added to prot_bag
+            
+            for row in csv_reader:
+                if (len(row[1]) != 0): #makes sure empty strings are not put into data
+                    prot_bag.append(row[1]) #puts every protein sequence from the file into prot_bag
+                    prot_bag_len += 1
+            prot_bag_len = file_len_no_empty(file2)
+
+            for i in range(num_samples): #adds num_samples protein sequences from each class
+                prot_seq = prot_bag[np.random.randint(0,prot_bag_len - 1)] #selects random protein sequence from prot_bag
+                if len(prot_seq) == 0:
+                    continue #makes sure empty strings are put into the data
+                file_seq = [] #individual list for the file
+                while (len(prot_seq) < max_len): #evens out lengths
+                    prot_seq+='-'
+                file_seq.append(prot_seq) #adds even-length sequences to file_seq            
+                for i in range(len(file_seq)): #iterates through each sequence in file_seq
+                    file_seq[i] = string_to_binary(file_seq[i])  #converts to binary
+                    x.append(file_seq[i]) #appends binary version to x
+                    if (file2 == 'decoded_PF00075_meso (1).csv'):
+                        y.append([0,1,0]) #appends correlated y depending on file
+                    elif (file2 == 'decoded_PF00075_psych.csv'):
+                        y.append([1,0,0])
+                    elif (file2 == 'decoded_PF00075_thermo.csv'):
+                        y.append([0,0,1])
+                    else:
+                        print('file not found???')
+                        
+    x = np.array(x) #converts x and y matrices into np arrays
+    y = np.array(y)
+       
+    for file3 in files: #iterates through each file
+        with open(file3) as csv_file:
+            file_name = ''
+            if (file3 == 'decoded_PF00075_meso (1).csv'):
+                 file_name = 'mesophilic'
+            elif (file3 == 'decoded_PF00075_psych.csv'):
+                 file_name = 'psychrophilic'
+            elif (file3 == 'decoded_PF00075_thermo.csv'):
+                 file_name = 'thermophilic'
+            csv_reader = csv.reader(csv_file)
+            row_count = 0 #counts which row csv_reader is on
+            file_lengths = [] #list of the lengths of sequences in the file
+            
+            for row in csv_reader: #iterates through each row
+                if (len(row[1])) == 0: #exclude protein sequence with length 0
+                    continue
+                row_count+=1 #count number of sequences
+                file_lengths.append(len(row[1])) #append length of sequence
+                
+            print_file_info(file_name, row_count, max(file_lengths), min(file_lengths), mean(file_lengths)) #prints info for files
+    
+    print('np.shape(x):', np.shape(x))
+    '''
+    X = np.reshape(x, (no_of_seq, no_of_pos, bits_per_pos, 1))
+    input_spec = (no_of_pos, bits_per_pos, 1) 
+    '''
+    X = np.reshape(x, (no_of_seq, no_of_pos, int(bits_per_pos / 3), 3))
+    input_spec = no_of_pos, int(bits_per_pos / 3), 3 
+    ''
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=100) #split train and test
+    
+    num_splits = 3 #number of splits in the dataset for the kfold
+    kf = KFold(n_splits=num_splits, shuffle = False, random_state = 100) #sets up kfold
+    k = 0 #initializes k variable, keeps track of iterations in nested for loop
+    neurons = [100] #neurons to be tested
+    filter_accuracy = [] #2d array which keeps track of the accuracy metric for each kfold and neuron tested
+    filter_accuracy_train = []
+    num_epochs = 10
+    #num_filters = 50
+    filters = [50]
+    
+    for num_filters in filters: #iterates through each neuron amount to test
+        print('testing for filter:', num_filters)
+        filter_accuracy.append([]) #adds a new list
+        filter_accuracy_train.append([])
+        fold = 0
+        for train_index, test_index in kf.split(X_train): #tests each kfold training/testing
+            fold += 1
+            print('testing for fold:', fold)
+            ## CNN model
+            model = Sequential()
+
+            model.add(Conv2D(filters = num_filters, kernel_size = 3, input_shape = input_spec))
+            model.add(Flatten())
+            model.add(Dense(100, activation = 'relu'))
+            model.add(Dense(no_of_classes, activation = 'sigmoid'))
+            
+            sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True) #square gradient descent
+            model.compile(loss = 'categorical_crossentropy', optimizer = 'sgd',
+                          metrics = ['categorical_accuracy'])
+            
+            model.fit(X_train, y_train, epochs = num_epochs, batch_size = 500)
+            
+            loss, acc = model.evaluate(X_test, y_test)
+            loss_train, acc_train = model.evaluate(X_train, y_train)
+            print('Accuracy = ',round(acc*100,2)) 
+            
+            filter_accuracy[k].append(round(acc,4)) #appends accuracy to neuron_accuracy
+            filter_accuracy_train[k].append(round(acc_train, 4))
+            
+        k+=1
+        
+    print('runtime:', datetime.now() - start)
+    print('num_filters:', num_filters)
+    print('num_epochs:',num_epochs)
+    print_table('test:', num_splits, filters, filter_accuracy)
+    print()
+    print_table('train:', num_splits, filters, filter_accuracy_train)
+    
+if __name__ == '__main__':
+    main()
